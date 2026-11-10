@@ -38,7 +38,7 @@ jobs:
             echo "Árbol git estándar detectado."
           fi
 
-      - name: 🟢 Configurar Node.js 22 LTS (Requerido por Capacitor 8)
+      - name: 🟢 Configurar Node.js 22 LTS (Capacitor 8)
         uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -49,15 +49,22 @@ jobs:
           distribution: 'temurin'
           java-version: '21'
 
+      - name: 📱 Configurar Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: 'platforms;android-35 platforms;android-36 build-tools;35.0.0 build-tools;36.0.0'
+
       - name: 📱 Aceptar licencias del SDK de Android
         run: |
-          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
+          yes | sdkmanager --licenses || true
 
-      - name: 📦 Instalar dependencias
-        run: npm install --legacy-peer-deps
+      - name: 📦 Instalar dependencias del proyecto
+        run: |
+          npm install --legacy-peer-deps
 
-      - name: 🔨 Compilar aplicación web
-        run: npm run build
+      - name: 🔨 Compilar aplicación web (Vite build)
+        run: |
+          npm run build
 
       - name: 📱 Inicializar y Sincronizar Capacitor Android
         env:
@@ -65,37 +72,61 @@ jobs:
           CAPACITOR_TELEMETRY: 0
         run: |
           npx cap telemetry off || true
+
           if [ ! -d "android" ] || [ ! -f "android/build.gradle" ]; then
+            echo "Inicializando proyecto Android nativo con Capacitor..."
             rm -rf android
             npx cap add android
+          else
+            echo "Directorio android nativo detectado y válido."
           fi
+
+          if [ -f "android/variables.gradle" ]; then
+            sed -i 's/compileSdkVersion = 36/compileSdkVersion = 35/g' android/variables.gradle || true
+            sed -i 's/targetSdkVersion = 36/targetSdkVersion = 35/g' android/variables.gradle || true
+          fi
+
+          echo "Sincronizando assets de dist hacia android..."
           npx cap sync android
 
-      - name: 🔧 Permisos de ejecución gradlew
-        run: chmod +x android/gradlew
+      - name: 🔧 Configurar permisos y formato Unix en gradlew
+        run: |
+          sed -i -e 's/\r$//' android/gradlew || true
+          chmod +x android/gradlew
 
-      - name: 🚀 Compilar APK con Gradle
+      - name: 🚀 Compilar APK con Gradle (assembleDebug)
         run: |
           cd android
-          ./gradlew assembleDebug --stacktrace --no-daemon
+          export GRADLE_OPTS="-Xmx2048m -XX:MaxMetaspaceSize=512m"
+          ./gradlew assembleDebug --no-daemon --stacktrace --info
 
-      - name: 🔍 Empaquetar APK y ZIP
+      - name: 🔍 Organizar APK para descarga
         run: |
           mkdir -p output-apk
-          APK_PATH=$(find android/app/build/outputs/apk/debug/ -name "*.apk" | head -n 1)
-          cp "$APK_PATH" output-apk/viajes-perdomo-debug.apk
-          cd output-apk
-          zip -r ../viajes-perdomo-apk-bundle.zip .
-          cd ..
+          APK_FILE=$(find android/app/build/outputs/apk/debug/ -name "*.apk" | head -n 1)
+          if [ -f "$APK_FILE" ]; then
+            echo "✅ APK generado con éxito: $APK_FILE"
+            cp "$APK_FILE" output-apk/viajes-perdomo.apk
+            cp "$APK_FILE" output-apk/app-debug.apk
+            cd output-apk
+            zip -r ../viajes-perdomo-apk.zip viajes-perdomo.apk app-debug.apk || true
+            cd ..
+          else
+            echo "❌ Error: No se encontró el archivo APK compilado en android/app/build/outputs/apk/debug/"
+            exit 1
+          fi
 
-      - name: 📤 Subir APK a Artifacts
+      - name: 📤 Subir APK a GitHub Artifacts (Descarga directa)
         uses: actions/upload-artifact@v4
         with:
           name: Viajes-Perdomo-APK
-          path: output-apk/viajes-perdomo-debug.apk
+          path: output-apk/viajes-perdomo.apk
+          retention-days: 90
 
-      - name: 📤 Subir ZIP con APK
+      - name: 📤 Subir archivo ZIP con el APK
         uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: Viajes-Perdomo-APK-ZIP
-          path: viajes-perdomo-apk-bundle.zip
+          path: viajes-perdomo-apk.zip
+          retention-days: 90
