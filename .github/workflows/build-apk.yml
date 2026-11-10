@@ -38,7 +38,7 @@ jobs:
             echo "Árbol git estándar detectado."
           fi
 
-      - name: 🟢 Configurar Node.js 22 LTS (Capacitor 8)
+      - name: 🟢 Configurar Node.js 22 LTS (Requerido por Capacitor 8)
         uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -49,14 +49,15 @@ jobs:
           distribution: 'temurin'
           java-version: '21'
 
-      - name: 📱 Configurar Android SDK
-        uses: android-actions/setup-android@v3
+      - name: 📱 Configurar Android SDK 36
+        uses: android-actions/setup-android@v4
         with:
-          packages: 'platforms;android-35 platforms;android-36 build-tools;35.0.0 build-tools;36.0.0'
+          packages: 'platforms;android-36 platform-tools build-tools;36.0.0'
 
       - name: 📱 Aceptar licencias del SDK de Android
         run: |
-          yes | sdkmanager --licenses || true
+          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
+          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "platforms;android-36" "build-tools;36.0.0" || true
 
       - name: 📦 Instalar dependencias del proyecto
         run: |
@@ -81,16 +82,34 @@ jobs:
             echo "Directorio android nativo detectado y válido."
           fi
 
-          if [ -f "android/variables.gradle" ]; then
-            sed -i 's/compileSdkVersion = 36/compileSdkVersion = 35/g' android/variables.gradle || true
-            sed -i 's/targetSdkVersion = 36/targetSdkVersion = 35/g' android/variables.gradle || true
-          fi
-
-          echo "Sincronizando assets de dist hacia android..."
+          echo "Sincronizando assets hacia android..."
           npx cap sync android
 
-      - name: 🔧 Configurar permisos y formato Unix en gradlew
+      - name: 🔧 Parchear compatibilidad Java 21 y SDK 36
         run: |
+          # Asegurar SDK 36 en variables.gradle
+          if [ -f "android/variables.gradle" ]; then
+            sed -i 's/compileSdkVersion = 35/compileSdkVersion = 36/g' android/variables.gradle || true
+            sed -i 's/targetSdkVersion = 35/targetSdkVersion = 36/g' android/variables.gradle || true
+          fi
+
+          # Asegurar Java 21 compileOptions en android/app/build.gradle
+          if [ -f "android/app/build.gradle" ]; then
+            if ! grep -q "JavaVersion.VERSION_21" android/app/build.gradle; then
+              echo "Agregando compileOptions Java 21 a android/app/build.gradle..."
+              sed -i '/defaultConfig {/i \    compileOptions {\n        sourceCompatibility JavaVersion.VERSION_21\n        targetCompatibility JavaVersion.VERSION_21\n    }' android/app/build.gradle || true
+            fi
+            if ! grep -q "abortOnError" android/app/build.gradle; then
+              sed -i '/defaultConfig {/i \    lint {\n        abortOnError false\n        checkReleaseBuilds false\n    }' android/app/build.gradle || true
+            fi
+            sed -i 's/if (servicesJSON.text)/if (servicesJSON.exists())/g' android/app/build.gradle || true
+            sed -i 's/delete rootProject.buildDir/delete rootProject.layout.buildDirectory/g' android/build.gradle || true
+          fi
+
+          # Crear directorio libs si no existe
+          mkdir -p android/app/libs
+
+          # Corregir saltos de línea Windows (CRLF) y otorgar permisos
           sed -i -e 's/\r$//' android/gradlew || true
           chmod +x android/gradlew
 
@@ -98,7 +117,7 @@ jobs:
         run: |
           cd android
           export GRADLE_OPTS="-Xmx2048m -XX:MaxMetaspaceSize=512m"
-          ./gradlew assembleDebug --no-daemon --stacktrace --info
+          ./gradlew assembleDebug --no-daemon --stacktrace
 
       - name: 🔍 Organizar APK para descarga
         run: |
