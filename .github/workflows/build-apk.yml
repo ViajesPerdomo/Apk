@@ -49,7 +49,7 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: 📦 Instalar dependencias de npm
+      - name: 📦 Instalar dependencias del proyecto
         run: |
           npm install --legacy-peer-deps
 
@@ -58,19 +58,31 @@ jobs:
           npm run build
 
       - name: 📱 Inicializar y Sincronizar Capacitor Android
+        env:
+          CI: true
+          CAPACITOR_TELEMETRY: 0
         run: |
-          if [ ! -d "android" ]; then
-            echo "Directorio android no encontrado. Inicializando Android nativo..."
+          # Desactivar telemetría interactiva de Capacitor
+          npx cap telemetry off || true
+
+          # Si el directorio android no existe o está incompleto, inicializarlo
+          if [ ! -d "android" ] || [ ! -f "android/build.gradle" ]; then
+            echo "Inicializando proyecto Android nativo con Capacitor..."
+            rm -rf android
             npx cap add android
+          else
+            echo "Directorio android nativo detectado y válido."
           fi
-          echo "Sincronizando assets de la app con Android..."
+
+          # Sincronizar assets compilados con la plataforma Android
+          echo "Sincronizando assets de dist/ hacia android/..."
           npx cap sync android
 
-      - name: 🔧 Permisos de ejecución en Gradle
+      - name: 🔧 Configurar permisos en gradlew
         run: |
           chmod +x android/gradlew
 
-      - name: 🚀 Compilar APK con Gradle
+      - name: 🚀 Compilar APK con Gradle (assembleDebug)
         run: |
           cd android
           ./gradlew assembleDebug --no-daemon --stacktrace
@@ -84,10 +96,10 @@ jobs:
             cp "$APK_FILE" output-apk/viajes-perdomo.apk
             cp "$APK_FILE" output-apk/app-debug.apk
             cd output-apk
-            zip -r ../viajes-perdomo-apk.zip viajes-perdomo.apk app-debug.apk
+            zip -r ../viajes-perdomo-apk.zip viajes-perdomo.apk app-debug.apk || true
             cd ..
           else
-            echo "❌ Error: No se encontró el APK compilado"
+            echo "❌ Error: No se encontró el archivo APK compilado en android/app/build/outputs/apk/debug/"
             exit 1
           fi
 
@@ -98,8 +110,9 @@ jobs:
           path: output-apk/viajes-perdomo.apk
           retention-days: 90
 
-      - name: 📤 Subir ZIP con el APK
+      - name: 📤 Subir archivo ZIP con el APK
         uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: Viajes-Perdomo-APK-ZIP
           path: viajes-perdomo-apk.zip
