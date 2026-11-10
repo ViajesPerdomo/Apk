@@ -38,10 +38,10 @@ jobs:
             echo "Árbol git estándar detectado."
           fi
 
-      - name: 🟢 Configurar Node.js 20 LTS
+      - name: 🟢 Configurar Node.js 22 LTS (Requerido por Capacitor 8)
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
 
       - name: ☕ Configurar Java 17 (Temurin)
         uses: actions/setup-java@v4
@@ -62,10 +62,8 @@ jobs:
           CI: true
           CAPACITOR_TELEMETRY: 0
         run: |
-          # Desactivar telemetría interactiva de Capacitor
           npx cap telemetry off || true
 
-          # Si el directorio android no existe o está incompleto, inicializarlo
           if [ ! -d "android" ] || [ ! -f "android/build.gradle" ]; then
             echo "Inicializando proyecto Android nativo con Capacitor..."
             rm -rf android
@@ -74,8 +72,7 @@ jobs:
             echo "Directorio android nativo detectado y válido."
           fi
 
-          # Sincronizar assets compilados con la plataforma Android
-          echo "Sincronizando assets de dist/ hacia android/..."
+          echo "Sincronizando assets de dist hacia android..."
           npx cap sync android
 
       - name: 🔧 Configurar permisos en gradlew
