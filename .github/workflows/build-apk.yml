@@ -35,21 +35,19 @@ jobs:
             echo "Detectado archivo $ZIP_FILE, descomprimiendo..."
             unzip -o "$ZIP_FILE" -d .
           else
-            echo "No se encontraron archivos zip en la raíz. Procediendo con el árbol git estándar."
+            echo "Árbol git estándar detectado."
           fi
-
-      - name: ☕ Configurar Java 17 (Temurin - Sin conflictos)
-        uses: actions/setup-java@v4
-        with:
-          distribution: 'temurin'
-          java-version: '17'
-          cache: 'gradle'
 
       - name: 🟢 Configurar Node.js 20 LTS
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: 'npm'
+
+      - name: ☕ Configurar Java 17 (Temurin)
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
 
       - name: 📦 Instalar dependencias de npm
         run: |
@@ -62,55 +60,47 @@ jobs:
       - name: 📱 Inicializar y Sincronizar Capacitor Android
         run: |
           if [ ! -d "android" ]; then
-            echo "Generando proyecto nativo Android..."
+            echo "Directorio android no encontrado. Inicializando Android nativo..."
             npx cap add android
           fi
-          echo "Sincronizando assets compilados con Android..."
+          echo "Sincronizando assets de la app con Android..."
           npx cap sync android
 
-      - name: 🔧 Configurar permisos de ejecución en gradlew
+      - name: 🔧 Permisos de ejecución en Gradle
         run: |
-          if [ -f "android/gradlew" ]; then
-            chmod +x android/gradlew
-          else
-            echo "Error: gradlew no encontrado"
-            exit 1
-          fi
+          chmod +x android/gradlew
 
       - name: 🚀 Compilar APK con Gradle
         run: |
           cd android
-          ./gradlew assembleDebug --stacktrace --no-daemon
+          ./gradlew assembleDebug --no-daemon --stacktrace
 
-      - name: 🔍 Localizar y Organizar APK generado
+      - name: 🔍 Organizar APK para descarga
         run: |
           mkdir -p output-apk
-          APK_PATH=$(find android/app/build/outputs/apk/debug/ -name "*.apk" | head -n 1)
-          if [ -f "$APK_PATH" ]; then
-            echo "✅ APK generado exitosamente en: $APK_PATH"
-            cp "$APK_PATH" output-apk/viajes-perdomo-debug.apk
-            cp "$APK_PATH" output-apk/app-debug.apk
-            
-            # Preparar archivo ZIP con el APK
+          APK_FILE=$(find android/app/build/outputs/apk/debug/ -name "*.apk" | head -n 1)
+          if [ -f "$APK_FILE" ]; then
+            echo "✅ APK generado con éxito: $APK_FILE"
+            cp "$APK_FILE" output-apk/viajes-perdomo.apk
+            cp "$APK_FILE" output-apk/app-debug.apk
             cd output-apk
-            zip -r ../viajes-perdomo-apk-bundle.zip .
+            zip -r ../viajes-perdomo-apk.zip viajes-perdomo.apk app-debug.apk
             cd ..
-            echo "✅ ZIP generado exitosamente: viajes-perdomo-apk-bundle.zip"
           else
-            echo "❌ No se encontró el APK generado."
+            echo "❌ Error: No se encontró el APK compilado"
             exit 1
           fi
 
-      - name: 📤 Subir APK individual a GitHub Artifacts
+      - name: 📤 Subir APK a GitHub Artifacts (Descarga directa)
         uses: actions/upload-artifact@v4
         with:
           name: Viajes-Perdomo-APK
-          path: output-apk/viajes-perdomo-debug.apk
+          path: output-apk/viajes-perdomo.apk
           retention-days: 90
 
-      - name: 📤 Subir archivo ZIP con APK
+      - name: 📤 Subir ZIP con el APK
         uses: actions/upload-artifact@v4
         with:
           name: Viajes-Perdomo-APK-ZIP
-          path: viajes-perdomo-apk-bundle.zip
+          path: viajes-perdomo-apk.zip
           retention-days: 90
